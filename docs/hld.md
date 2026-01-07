@@ -1,268 +1,250 @@
-📐 High-Level Design (HLD) — Cricket Live Platform
-1. Purpose
+# 📐 High-Level Design (HLD) — Cricket Live Platform
 
-This document describes the high-level architecture of the Cricket Live Platform, focusing on:
+## 1. Purpose
 
-Major system components
+This document describes the **high-level architecture** of the Cricket Live Platform, covering:
 
-Data flow
+* Major system components
+* Data flow
+* Technology choices
+* Scalability and reliability considerations
 
-Technology choices
+It acts as a bridge between **requirements** and **low-level design (LLD)**.
 
-Scalability and reliability considerations
+---
 
-It acts as a bridge between requirements and low-level design (LLD).
+## 2. System Overview
 
-2. System Overview
+The platform is a **real-time, event-driven backend system** where:
 
-The system is a real-time, event-driven backend platform where:
+* **Admins** publish live cricket match events
+* **Users** consume real-time updates via **WebSockets**
+* **Redis** acts as the real-time backbone
+* **PostgreSQL** stores durable match data
 
-Admins publish live cricket match events
+**Key Characteristics**
 
-Users consume real-time updates via WebSockets
+* Stateless services
+* Horizontally scalable
+* Cloud-native & production-ready
 
-Redis acts as the real-time backbone
+---
 
-PostgreSQL stores durable match data
+## 3. High-Level Architecture (Logical View)
 
-The architecture is stateless, horizontally scalable, and cloud-ready.
+```text
+┌────────────┐
+│  Clients   │
+│ (Web/Mobile)│
+└─────┬──────┘
+      │
+┌─────▼────────┐
+│ Load Balancer │
+└─────┬────────┘
+      │
+┌─────▼──────────────────┐
+│   FastAPI Backend       │
+│ (REST + WebSocket APIs) │
+└─────┬─────────┬────────┘
+      │         │
+┌─────▼───┐ ┌───▼────────┐
+│PostgreSQL│ │   Redis   │
+│(History) │ │ Cache +   │
+│          │ │ Pub/Sub  │
+└──────────┘ └───────────┘
+```
 
-3. High-Level Architecture Diagram (Logical)
-                ┌────────────┐
-                │   Clients  │
-                │ (Web/Mobile)│
-                └─────┬──────┘
-                      │
-              ┌───────▼────────┐
-              │ Load Balancer   │
-              └───────┬────────┘
-                      │
-        ┌─────────────▼─────────────┐
-        │     FastAPI Backend        │
-        │ (REST + WebSocket APIs)    │
-        └───────┬─────────┬─────────┘
-                │         │
-        ┌───────▼───┐ ┌──▼────────┐
-        │ PostgreSQL │ │   Redis   │
-        │ (History)  │ │ Cache +   │
-        │             │ │ Pub/Sub  │
-        └────────────┘ └───────────┘
+---
 
-4. Core Components
-4.1 API Gateway / Backend Service (FastAPI)
+## 4. Core Components
 
-Responsibilities:
+### 4.1 Backend Service (FastAPI)
 
-Handle REST APIs (auth, match management, history)
+**Responsibilities**
 
-Manage WebSocket connections
+* REST APIs (auth, match management, history)
+* WebSocket connection handling
+* JWT validation
+* Role-based access control (RBAC)
+* Redis event publish/consume
 
-Validate JWT tokens
+**Why FastAPI**
 
-Enforce role-based access control
+* Async-first (ideal for WebSockets)
+* High throughput
+* Clean dependency injection
+* Auto-generated API documentation
 
-Publish/consume Redis events
+---
 
-Why FastAPI
+### 4.2 WebSocket Manager
 
-Async-first (important for WebSockets)
+**Responsibilities**
 
-High performance
+* Maintain active WebSocket connections
+* Map users to match subscriptions
+* Broadcast live updates
+* Handle reconnects gracefully
 
-Clean dependency injection
+**Design Characteristics**
 
-Auto API documentation
+* Stateless
+* Horizontally scalable
+* Uses Redis Pub/Sub for cross-instance messaging
 
-4.2 WebSocket Manager
+---
 
-Responsibilities:
+### 4.3 Redis
 
-Maintain active WebSocket connections
+**Usage**
 
-Map users to matches
+* Live match state caching
+* Pub/Sub for real-time events
+* Temporary data with TTL
 
-Broadcast live updates to subscribers
+**Why Redis**
 
-Handle reconnects gracefully
+* Extremely low latency
+* Native Pub/Sub support
+* Shared state across backend instances
+* Reduces PostgreSQL load
 
-Key Characteristics:
+---
 
-Stateless
+### 4.4 PostgreSQL
 
-Scales horizontally
+**Responsibilities**
 
-Uses Redis Pub/Sub for cross-instance messaging
+* Persistent storage for:
 
-4.3 Redis
+  * Matches
+  * Teams
+  * Players
+  * Ball-by-ball history
+* Source of truth for completed matches
 
-Used for:
+**Design Choice**
 
-Live match state caching
+* Strong consistency
+* ACID compliance
+* Mature indexing & migration support
 
-Pub/Sub for real-time updates
+---
 
-Temporary data (TTL-based)
+### 4.5 Authentication & Authorization
 
-Why Redis
+* JWT-based authentication
+* Role-based access control:
 
-Extremely low latency
+  * `ADMIN`
+  * `USER`
+* Middleware-level enforcement
 
-Native Pub/Sub
+---
 
-Shared state across instances
+## 5. Data Flow
 
-Reduces database load
+### 5.1 Live Match Update Flow (Admin → Users)
 
-4.4 PostgreSQL
+1. Admin sends ball update via REST API
+2. Backend validates:
 
-Responsibilities:
+   * JWT
+   * Admin role
+3. Live state written to Redis
+4. Event published to Redis Pub/Sub
+5. All WebSocket servers receive the event
+6. Update broadcast to subscribed users
+7. Periodic persistence to PostgreSQL
 
-Persistent storage of:
+---
 
-Matches
+### 5.2 User Subscription Flow
 
-Teams
+1. User establishes WebSocket connection
+2. JWT validated
+3. User subscribes to a match channel
+4. Initial match state fetched from Redis
+5. Live updates streamed in real time
 
-Players
+---
 
-Ball-by-ball history
+### 5.3 Match Completion Flow
 
-Source of truth for completed matches
+1. Admin marks match as completed
+2. Final state persisted to PostgreSQL
+3. Redis cache invalidated (or TTL expiry)
+4. WebSocket channels closed gracefully
 
-Design Choice:
+---
 
-Strong consistency
+## 6. Scalability Strategy
 
-ACID compliance
+### 6.1 Horizontal Scaling
 
-Mature indexing & migration support
+* Backend instances are stateless
+* WebSockets scale via Redis Pub/Sub
+* Load balancer distributes traffic
 
-4.5 Authentication & Authorization
+### 6.2 Read Optimization
 
-JWT-based authentication
+* Live reads → Redis
+* Historical reads → PostgreSQL
+* Protects DB from read spikes
 
-Role-based access:
+### 6.3 Write Optimization
 
-ADMIN
+* Admin writes are low volume
+* Writes are validated and serialized
+* Optional batched DB writes
 
-USER
+---
 
-Middleware-based enforcement
+## 7. Fault Tolerance
 
-5. Data Flow
-5.1 Live Match Update Flow (Admin → Users)
+| Component  | Strategy                  |
+| ---------- | ------------------------- |
+| Backend    | Multiple instances        |
+| Redis      | Replication + persistence |
+| PostgreSQL | Backups + failover        |
+| WebSockets | Client reconnect support  |
 
-Admin sends ball update via REST API
+---
 
-Backend validates:
+## 8. Security Considerations
 
-JWT
+* HTTPS everywhere
+* Secure WebSockets (`wss`)
+* JWT expiry & refresh strategy
+* Rate limiting on REST APIs
+* Strict input validation
 
-Admin role
+---
 
-Update written to Redis (live state)
+## 9. Deployment Overview
 
-Event published to Redis Pub/Sub
+* Dockerized services
+* Docker Compose (local development)
+* Kubernetes-ready architecture
+* Environment-based configuration
 
-All WebSocket servers receive event
+---
 
-Update broadcasted to subscribed users
+## 10. Trade-offs & Key Decisions
 
-Periodic persistence to PostgreSQL
+| Decision           | Reason                  |
+| ------------------ | ----------------------- |
+| Redis Pub/Sub      | Simplicity + speed      |
+| PostgreSQL         | Strong consistency      |
+| FastAPI            | Async performance       |
+| Stateless services | Easy horizontal scaling |
 
-5.2 User Subscription Flow
+---
 
-User connects to WebSocket
+## 11. What This Enables
 
-JWT validated
+* Clean Low-Level Design (LLD)
+* Clear API contracts
+* Confident capacity estimation
+* Interview-ready system explanation
 
-User subscribes to match channel
-
-Initial state fetched from Redis
-
-Continuous updates streamed in real time
-
-5.3 Match Completion Flow
-
-Admin marks match as completed
-
-Final state persisted to PostgreSQL
-
-Redis cache invalidated (or TTL expiry)
-
-WebSocket channel closed gracefully
-
-6. Scalability Strategy
-6.1 Horizontal Scaling
-
-Backend instances are stateless
-
-WebSockets scale via Redis Pub/Sub
-
-Load balancer distributes traffic
-
-6.2 Read Optimization
-
-Live reads served from Redis
-
-Historical reads served from PostgreSQL
-
-DB protected from read spikes
-
-6.3 Write Optimization
-
-Admin writes are low volume
-
-Writes are validated and serialized
-
-Batched DB writes (optional)
-
-7. Fault Tolerance
-Component	Strategy
-Backend	Multiple instances
-Redis	Persistence + replication
-PostgreSQL	Backups + failover
-WebSockets	Reconnect support
-8. Security Considerations
-
-HTTPS only
-
-Secure WebSocket (wss)
-
-JWT expiry & refresh strategy
-
-Rate limiting on REST APIs
-
-Input validation everywhere
-
-9. Deployment Overview
-
-Dockerized services
-
-Docker Compose (local)
-
-Kubernetes-ready architecture
-
-Environment-based config
-
-10. Trade-offs & Decisions
-Decision	Reason
-Redis Pub/Sub	Simplicity + speed
-PostgreSQL	Strong consistency
-FastAPI	Async performance
-Stateless services	Easy scaling
-11. What This Enables
-
-This HLD enables:
-
-Clean LLD
-
-Clear API contracts
-
-Confident capacity estimation
-
-Interview-ready system explanation
-
-git add docs/hld.md
-git commit -m "Add high level system design (HLD)"
-git push
