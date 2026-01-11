@@ -1,174 +1,207 @@
-🚀 Redis Design — Cricket Live Platform
-1. Purpose
+# 🚀 Redis Design — Cricket Live Platform
 
-This document defines how Redis is used in the Cricket Live Platform for:
+## 1. Purpose
 
-Live match state caching
+This document describes how **Redis** is used in the Cricket Live Platform to:
 
-Real-time pub/sub messaging
+* Cache live match state
+* Enable real-time pub/sub messaging
+* Reduce primary database load
+* Support horizontal scalability
 
-Reducing database load
+Redis acts as the **real-time backbone** of the system.
 
-Enabling horizontal scalability
+---
 
-2. Why Redis?
+## 2. Why Redis?
 
-Redis is chosen because it provides:
+Redis is chosen for its ability to deliver real-time performance:
 
-Sub-millisecond latency
+* Sub-millisecond latency
+* In-memory data access
+* Native Pub/Sub support
+* Atomic operations
+* TTL-based key eviction
 
-In-memory data access
+---
 
-Native Pub/Sub support
+## 3. Redis Use Cases
 
-Atomic operations
+| Use Case         | Description                   |
+| ---------------- | ----------------------------- |
+| Live State Cache | Current score, overs, wickets |
+| Pub/Sub          | Broadcast live match events   |
+| Temporary Data   | Active subscriptions          |
+| Rate Limiting    | Request throttling            |
 
-TTL-based eviction
+---
 
-Redis acts as the real-time backbone of the system.
+## 4. Redis Key Design
 
-3. Redis Use Cases
-Use Case	Description
-Live State Cache	Current score, overs, wickets
-Pub/Sub	Broadcast live events
-Temporary Data	Active subscriptions
-Rate Limiting	Request throttling
-4. Redis Key Design
-4.1 Live Match State
-Key: match:{match_id}:state
-Type: HASH
+### 4.1 Live Match State
 
+* **Key**: `match:{match_id}:state`
+* **Type**: `HASH`
 
-Fields
+**Fields**
 
-runs
-wickets
-overs
-last_updated
+* `runs`
+* `wickets`
+* `overs`
+* `last_updated`
 
-4.2 Recent Ball Events
-Key: match:{match_id}:events
-Type: LIST
+---
 
+### 4.2 Recent Ball Events
 
-Stores last N events (e.g., 100)
+* **Key**: `match:{match_id}:events`
+* **Type**: `LIST`
 
-Trimmed using LTRIM
+**Notes**
 
-4.3 Active Subscribers
-Key: match:{match_id}:subscribers
-Type: SET
+* Stores the last **N** events (e.g., 100 balls)
+* Trimmed using `LTRIM`
 
+---
 
-Tracks active WebSocket users
+### 4.3 Active Subscribers
 
-Helps analytics and cleanup
+* **Key**: `match:{match_id}:subscribers`
+* **Type**: `SET`
 
-4.4 Pub/Sub Channel
-Channel: match:{match_id}:channel
+**Purpose**
 
+* Tracks active WebSocket connections
+* Used for analytics and cleanup
 
-Broadcasts:
+---
 
-BALL_UPDATE
+### 4.4 Pub/Sub Channel
 
-WICKET
+* **Channel**: `match:{match_id}:channel`
 
-MATCH_END
+**Published Events**
 
-5. TTL Strategy
-Key	TTL	Reason
-match:{id}:state	Until match ends + 1 hr	Serve late viewers
-match:{id}:events	Same as state	History buffer
-match:{id}:subscribers	No TTL	Managed on connect/disconnect
-Pub/Sub	N/A	Ephemeral
+* `BALL_UPDATE`
+* `WICKET`
+* `MATCH_END`
 
-On match completion:
+---
 
-Keys are explicitly deleted OR
+## 5. TTL Strategy
 
-TTL reduced to short duration
+| Key                      | TTL                       | Reason                        |
+| ------------------------ | ------------------------- | ----------------------------- |
+| `match:{id}:state`       | Until match ends + 1 hour | Serve late viewers            |
+| `match:{id}:events`      | Same as state             | Maintain short history        |
+| `match:{id}:subscribers` | No TTL                    | Managed on connect/disconnect |
+| Pub/Sub channels         | N/A                       | Ephemeral                     |
 
-6. Eviction Policy
-Redis Configuration
+**On match completion:**
+
+* Keys are explicitly deleted **or**
+* TTL is reduced to a short duration
+
+---
+
+## 6. Eviction Policy
+
+**Redis Configuration**
+
+```conf
 maxmemory-policy allkeys-lru
+```
 
+**Reason**
 
-Reason
+* Live data is accessed most frequently
+* Least Recently Used data is safe to evict
 
-Live data is most frequently accessed
+---
 
-Least recently used data is safe to evict
+## 7. Atomicity & Consistency
 
-7. Atomicity & Consistency
+* `HINCRBY` for score updates
+* `MULTI / EXEC` for grouped updates
+* Prevents partial or inconsistent state updates
 
-HINCRBY used for score updates
+---
 
-MULTI/EXEC for grouped updates
+## 8. Redis Pub/Sub Flow
 
-Prevents partial updates
+1. Admin submits a match update
+2. Redis match state is updated
+3. Event is published to Redis channel
+4. All backend instances receive the event
+5. WebSocket servers broadcast to clients
 
-8. Redis Pub/Sub Flow
+---
 
-Admin update received
+## 9. Failure Handling
 
-Redis state updated
+| Scenario             | Behavior                    |
+| -------------------- | --------------------------- |
+| Redis unavailable    | Fallback to database        |
+| Pub/Sub message loss | Next update corrects state  |
+| Instance crash       | No data loss (Redis shared) |
 
-Event published to channel
+---
 
-All backend instances receive event
+## 10. Rate Limiting (Redis-Based)
 
-WebSocket servers broadcast
+**Key Pattern**
 
-9. Failure Handling
-Scenario	Behavior
-Redis down	Fallback to DB
-Pub/Sub message loss	Next update corrects state
-Instance crash	No data loss
-10. Rate Limiting (Redis-based)
-
-Key
-
+```
 rate:{user_id}:{endpoint}
+```
 
+**Logic**
 
-Incremented per request
+* Incremented per request
+* TTL = rate-limit window
+* Exceeding limit → `HTTP 429 Too Many Requests`
 
-TTL = window size
+---
 
-Exceed → HTTP 429
+## 11. Capacity Estimation (Preview)
 
-11. Capacity Estimation (Preview)
-Item	Estimate
-Live matches	50
-Avg users/match	20K
-Keys/match	~5
-Total keys	~250
-Memory	< 100 MB
+| Item                | Estimate |
+| ------------------- | -------- |
+| Live matches        | 50       |
+| Avg users per match | 20,000   |
+| Keys per match      | ~5       |
+| Total keys          | ~250     |
+| Memory usage        | < 100 MB |
 
-Detailed estimation in capacity-estimation.md
+📄 Detailed analysis available in `capacity-estimation.md`
 
-12. Security Considerations
+---
 
-Redis not publicly exposed
+## 12. Security Considerations
 
-Authenticated access only
+* Redis is not publicly exposed
+* Authenticated access only
+* TLS enabled in production
+* No sensitive data stored
 
-TLS in production
+---
 
-No sensitive data stored
+## 13. Trade-offs
 
-13. Trade-offs
-Choice	Reason
-Pub/Sub over Streams	Simpler, lower latency
-Cache over DB reads	Performance
-TTL-based cleanup	Predictable memory
-14. What This Enables
+| Choice               | Reason                   |
+| -------------------- | ------------------------ |
+| Pub/Sub over Streams | Simpler, lower latency   |
+| Cache over DB reads  | High performance         |
+| TTL-based cleanup    | Predictable memory usage |
 
-Real-time fan-out at scale
+---
 
-Minimal DB load
+## 14. What This Enables
 
-Stateless WebSocket servers
+* Real-time fan-out at scale
+* Minimal database load
+* Stateless WebSocket servers
+* Predictable memory utilization
 
-Predictable memory usage
+---
+

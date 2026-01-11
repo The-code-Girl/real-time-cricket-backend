@@ -1,181 +1,240 @@
-📊 Capacity Estimation & Scaling Strategy — Cricket Live Platform
-1. Purpose
+# 📊 Capacity Estimation & Scaling Strategy — Cricket Live Platform
 
-This document estimates traffic, storage, memory, and compute needs for the Cricket Live Platform and defines a scaling strategy to handle peak loads during live matches.
+## 1. Purpose
 
-2. Assumptions
-Traffic Assumptions (Peak Event)
+This document estimates **traffic, storage, memory, and compute requirements** for the Cricket Live Platform and defines a **scaling strategy** to reliably handle peak loads during live matches.
 
-Concurrent live matches: 50
+---
 
-Average concurrent users per match: 20,000
+## 2. Assumptions
 
-Peak concurrent users total: 1,000,000
+### Traffic Assumptions (Peak Event)
 
-Admin scorers per match: 2
+* Concurrent live matches: **50**
+* Average concurrent users per match: **20,000**
+* Peak concurrent users (total): **1,000,000**
+* Admin scorers per match: **2**
+* Average match duration: **3 hours**
 
-Match duration: 3 hours
+---
 
-3. Read & Write Patterns
-3.1 Write Traffic (Admin Scoring)
+## 3. Read & Write Patterns
 
-Ball updates per over: 6
+### 3.1 Write Traffic (Admin Scoring)
 
-Overs per match: 50
+* Ball updates per over: **6**
+* Overs per match: **50**
+* Total balls per match: **300**
+* Events per match: **~350** (balls, wickets, extras)
 
-Total balls per match: 300
+**Peak Write Rate**
 
-Events per match: ~350 (including wickets, extras)
+```
+50 matches × 1 ball update / 30 seconds ≈ 1.6 writes/sec
+```
 
-Writes per second (peak):
+➡️ **Write traffic is extremely low and easy to scale**
 
-50 matches × 1 ball / 30 sec ≈ 1.6 writes/sec
+---
 
+### 3.2 Read Traffic (Users)
 
-➡️ Very low write traffic (easy to scale)
+#### REST API Reads
 
-3.2 Read Traffic (Users)
-REST API Reads
+* Initial match load per user
+* Assume **1 REST call per user**
 
-Initial match load per user
-
-Assume 1 REST fetch per user
-
+```
 1,000,000 users / 10 minutes ≈ 1,666 RPS
+```
 
-WebSocket Messages
+---
 
-Every ball update broadcasted
+#### WebSocket Messages
 
-50 matches × 1 update / 30 sec = ~1.6 events/sec
+* Every ball update is broadcasted
 
+```
+50 matches × 1 update / 30 seconds ≈ 1.6 events/sec
+```
 
 Each event fan-outs to:
 
-20,000 users per match
+* **20,000 users per match**
 
+➡️ **WebSocket fan-out is the dominant load, not REST APIs**
 
-➡️ WebSocket fan-out is the real load, not REST.
+---
 
-4. WebSocket Capacity
-Concurrent Connections
+## 4. WebSocket Capacity
 
-Peak WebSocket connections: 1M
+### Concurrent Connections
 
-Backend Instance Capacity
+* Peak WebSocket connections: **1,000,000**
 
-Conservative estimate: 50,000 connections / instance
+### Backend Instance Capacity
 
+* Conservative estimate: **50,000 connections / instance**
+
+```
 1,000,000 / 50,000 = 20 instances
+```
 
+➡️ **Provision 25 instances for safety buffer**
 
-➡️ Plan for 25 instances (buffer)
+---
 
-5. Redis Capacity Estimation
-5.1 Key Count
-Key Type	Per Match	Total
-Live state	1	50
-Event list	1	50
-Subscribers	1	50
-Rate limits	~10K	~500K
-5.2 Memory Usage
-Live State
+## 5. Redis Capacity Estimation
 
-~1 KB per match → 50 KB
+### 5.1 Key Count
 
-Events
+| Key Type        | Per Match | Total    |
+| --------------- | --------- | -------- |
+| Live state      | 1         | 50       |
+| Event list      | 1         | 50       |
+| Subscribers set | 1         | 50       |
+| Rate-limit keys | ~10,000   | ~500,000 |
 
-100 events × 300 bytes = 30 KB / match → 1.5 MB
+---
 
-Rate Limits
+### 5.2 Memory Usage
 
-~100 bytes/key × 500K → 50 MB
+#### Live Match State
 
-➡️ Total Redis Memory ≈ 100 MB
+* ~1 KB per match → **50 KB**
 
-Provision: 512 MB – 1 GB Redis instance
+#### Recent Events
 
-6. PostgreSQL Storage Estimation
-Ball Events
+* 100 events × 300 bytes ≈ **30 KB per match**
+* 50 matches → **1.5 MB**
 
-Events per match: 350
+#### Rate Limiting
 
-Matches per day: 100
+* ~100 bytes per key × 500K keys → **~50 MB**
 
-Events per day: 35,000
+---
 
-Yearly Storage
-35,000 × 365 ≈ 12.7M rows
+### Total Redis Memory
 
-Row Size
+➡️ **~100 MB**
 
-~300 bytes / row
+**Provisioning Recommendation**
 
-12.7M × 300B ≈ 3.8 GB / year
+* Redis instance size: **512 MB – 1 GB**
 
+---
 
-➡️ PostgreSQL easily handles this with indexing.
+## 6. PostgreSQL Storage Estimation
 
-7. API Throughput
-REST APIs
+### Ball Events
 
-Peak: ~2K RPS
+* Events per match: **350**
+* Matches per day: **100**
+* Events per day: **35,000**
 
-FastAPI can handle ~5–10K RPS per instance
+### Yearly Storage
 
-➡️ 5–6 API instances sufficient
+```
+35,000 × 365 ≈ 12.7 million rows
+```
 
-8. Scaling Strategy
-8.1 Horizontal Scaling
-Component	Strategy
-API	Stateless, autoscale
-WebSocket	Redis Pub/Sub
-Redis	Primary + replica
-DB	Read replicas
-8.2 Autoscaling Triggers
+### Row Size
 
-CPU > 70%
+* ~300 bytes per row
 
-Active WebSocket connections
+```
+12.7M × 300B ≈ 3.8 GB per year
+```
 
-Redis memory usage
+➡️ **PostgreSQL can easily handle this with proper indexing**
 
-API response latency
+---
 
-9. Fault Tolerance
-Failure	Handling
-API crash	Load balancer reroutes
-WS server down	Client reconnect
-Redis down	Read from DB
-DB down	Read-only degraded mode
-10. Cost Awareness (Rough)
-Component	Estimate
-API instances	Medium
-Redis	Low
-DB	Medium
-Bandwidth	High (WebSockets)
+## 7. API Throughput
 
-➡️ WebSocket traffic is the dominant cost
+### REST APIs
 
-11. Bottlenecks & Mitigation
-Bottleneck	Mitigation
-WS fan-out	Horizontal scale
-Redis Pub/Sub	Sharding by match
-DB writes	Async batching
-Cold starts	Warm pools
-12. Trade-offs
-Decision	Reason
-WebSockets	True real-time
-Redis	Low latency
-Eventual consistency	Performance
-13. Final Summary
+* Peak traffic: **~2,000 RPS**
+* FastAPI capacity: **5–10K RPS per instance**
 
-Write load is minimal
+➡️ **5–6 API instances are sufficient**
 
-Read & fan-out dominate
+---
 
-Redis is critical
+## 8. Scaling Strategy
 
-WebSockets define scale
+### 8.1 Horizontal Scaling
 
-Architecture supports 10× growth
+| Component         | Strategy               |
+| ----------------- | ---------------------- |
+| API servers       | Stateless, auto-scaled |
+| WebSocket servers | Redis Pub/Sub          |
+| Redis             | Primary + replica      |
+| Database          | Read replicas          |
+
+---
+
+### 8.2 Autoscaling Triggers
+
+* CPU usage > 70%
+* Active WebSocket connections
+* Redis memory utilization
+* API response latency
+
+---
+
+## 9. Fault Tolerance
+
+| Failure               | Handling                |
+| --------------------- | ----------------------- |
+| API instance crash    | Load balancer reroutes  |
+| WebSocket server down | Client auto-reconnect   |
+| Redis unavailable     | Fallback to database    |
+| Database unavailable  | Read-only degraded mode |
+
+---
+
+## 10. Cost Awareness (Rough)
+
+| Component         | Cost              |
+| ----------------- | ----------------- |
+| API instances     | Medium            |
+| Redis             | Low               |
+| Database          | Medium            |
+| Network bandwidth | High (WebSockets) |
+
+➡️ **WebSocket traffic is the dominant cost driver**
+
+---
+
+## 11. Bottlenecks & Mitigation
+
+| Bottleneck        | Mitigation          |
+| ----------------- | ------------------- |
+| WebSocket fan-out | Horizontal scaling  |
+| Redis Pub/Sub     | Sharding by match   |
+| Database writes   | Async batching      |
+| Cold starts       | Warm instance pools |
+
+---
+
+## 12. Trade-offs
+
+| Decision             | Reason                    |
+| -------------------- | ------------------------- |
+| WebSockets           | True real-time experience |
+| Redis                | Ultra-low latency         |
+| Eventual consistency | Higher throughput         |
+
+---
+
+## 13. Final Summary
+
+* Write load is minimal
+* Read traffic and fan-out dominate
+* Redis is a critical dependency
+* WebSockets define system scale
+* Architecture comfortably supports **10× growth**
+
+---
+
