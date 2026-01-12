@@ -17,8 +17,13 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_MINUTES: int = 60
 
+    # Database
+    database_url: str  # <- This fixes your ValidationError
+
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
 
 settings = Settings()
+
 
