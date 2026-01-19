@@ -13,9 +13,9 @@ class Settings(BaseSettings):
     ENV: str = "dev"
 
     # Security
-    JWT_SECRET_KEY: str = "change-me"
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRY_MINUTES: int = 60
+    JWT_SECRET_KEY: str 
+    JWT_ALGORITHM: str 
+    JWT_EXPIRY_MINUTES: int 
 
     # Database
     database_url: str  # <- This fixes your ValidationError
