@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from app.core.config import settings
 from app.api.v1.router import router as api_v1_router
+from app.auth.router import router as auth_router
+from app.admin.router import router as admin_router
+
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -15,3 +18,5 @@ async def health_check():
     }
 
 app.include_router(api_v1_router)
+app.include_router(auth_router)
+app.include_router(admin_router)
