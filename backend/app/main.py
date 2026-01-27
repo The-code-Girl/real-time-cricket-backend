@@ -3,6 +3,8 @@ from app.core.config import settings
 from app.api.v1.router import router as api_v1_router
 from app.auth.router import router as auth_router
 from app.admin.router import router as admin_router
+from app.websocket.router import router as ws_router
+
 
 
 app = FastAPI(
@@ -20,3 +22,5 @@ async def health_check():
 app.include_router(api_v1_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(ws_router)
+
