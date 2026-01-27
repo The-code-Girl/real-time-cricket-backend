@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Live Cricket Match</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      padding: 30px;
+    }
+    .card {
+      background: #1e293b;
+      padding: 20px;
+      border-radius: 10px;
+      width: 400px;
+    }
+    .title {
+      font-size: 22px;
+      margin-bottom: 10px;
+    }
+    .live {
+      color: #22c55e;
+      font-weight: bold;
+    }
+    .value {
+      font-size: 18px;
+      margin: 8px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="title">🏏 Live Match <span class="live">● LIVE</span></div>
+
+    <div class="value">Match ID: <span id="matchId">-</span></div>
+    <div class="value">Overs: <span id="overs">0.0</span></div>
+    <div class="value">Runs: <span id="runs">0</span></div>
+    <div class="value">Wickets: <span id="wickets">0</span></div>
+    <div class="value">Last Ball: <span id="commentary">-</span></div>
+
+    <hr />
+    <div class="value">WebSocket: <span id="status">Disconnected</span></div>
+  </div>
+
+  <script>
+    // 🔴 CHANGE THIS MATCH ID
+    const MATCH_ID = "REPLACE_WITH_MATCH_ID";
+    document.getElementById("matchId").innerText = MATCH_ID;
+
+    const ws = new WebSocket(`ws://localhost:8000/ws/match/${MATCH_ID}`);
+
+    ws.onopen = () => {
+      document.getElementById("status").innerText = "Connected";
+    };
+
+    ws.onclose = () => {
+      document.getElementById("status").innerText = "Disconnected";
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "BALL") {
+        document.getElementById("overs").innerText = data.over;
+        document.getElementById("runs").innerText = data.runs;
+        document.getElementById("wickets").innerText = data.wicket ? "Yes" : "No";
+        document.getElementById("commentary").innerText = data.commentary;
+      }
+    };
+  </script>
+
+</body>
+</html>
