@@ -14,7 +14,7 @@
       background: #1e293b;
       padding: 20px;
       border-radius: 10px;
-      width: 400px;
+      width: 420px;
     }
     .title {
       font-size: 22px;
@@ -28,12 +28,21 @@
       font-size: 18px;
       margin: 8px 0;
     }
+    select {
+      width: 100%;
+      padding: 6px;
+      margin-bottom: 10px;
+    }
   </style>
 </head>
 <body>
 
   <div class="card">
     <div class="title">🏏 Live Match <span class="live">● LIVE</span></div>
+
+    <select id="matchSelect">
+      <option>Loading matches...</option>
+    </select>
 
     <div class="value">Match ID: <span id="matchId">-</span></div>
     <div class="value">Overs: <span id="overs">0.0</span></div>
@@ -46,30 +55,66 @@
   </div>
 
   <script>
-    // 🔴 CHANGE THIS MATCH ID
-    const MATCH_ID = "REPLACE_WITH_MATCH_ID";
-    document.getElementById("matchId").innerText = MATCH_ID;
+    let ws = null;
 
-    const ws = new WebSocket(`ws://localhost:8000/ws/match/${MATCH_ID}`);
+    async function loadMatches() {
+      const res = await fetch("http://localhost:8000/matches/live");
+      const matches = await res.json();
 
-    ws.onopen = () => {
-      document.getElementById("status").innerText = "Connected";
-    };
+      const select = document.getElementById("matchSelect");
+      select.innerHTML = "";
 
-    ws.onclose = () => {
-      document.getElementById("status").innerText = "Disconnected";
-    };
+      matches.forEach(match => {
+        const option = document.createElement("option");
+        option.value = match.id;
+        option.text = `${match.team_a} vs ${match.team_b}`;
+        select.appendChild(option);
+      });
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === "BALL") {
-        document.getElementById("overs").innerText = data.over;
-        document.getElementById("runs").innerText = data.runs;
-        document.getElementById("wickets").innerText = data.wicket ? "Yes" : "No";
-        document.getElementById("commentary").innerText = data.commentary;
+      if (matches.length > 0) {
+        connectWebSocket(matches[0].id);
       }
-    };
+
+      select.onchange = () => connectWebSocket(select.value);
+    }
+
+    function connectWebSocket(matchId) {
+      if (ws) ws.close();
+
+      document.getElementById("matchId").innerText = matchId;
+      document.getElementById("status").innerText = "Connecting...";
+
+      ws = new WebSocket(`ws://localhost:8000/ws/match/${matchId}`);
+
+      ws.onopen = () => {
+        document.getElementById("status").innerText = "Connected";
+      };
+
+      ws.onclose = () => {
+        document.getElementById("status").innerText = "Disconnected";
+      };
+
+      ws.onerror = () => {
+        document.getElementById("status").innerText = "Error";
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "BALL") {
+          document.getElementById("overs").innerText = data.over;
+          document.getElementById("runs").innerText = data.runs;
+          document.getElementById("wickets").innerText = data.wicket ? "Yes" : "No";
+          document.getElementById("commentary").innerText = data.commentary;
+        }
+
+        if (data.type === "MATCH_END") {
+          document.getElementById("status").innerText = "Match Finished";
+        }
+      };
+    }
+
+    loadMatches();
   </script>
 
 </body>
