@@ -2,120 +2,198 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Live Cricket Match</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cricket Live Centre</title>
   <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --panel: #101f33;
+      --panel-light: #172a43;
+      --text: #f8fafc;
+      --muted: #9fb0c7;
+      --accent: #43e38b;
+      --warning: #fbbf24;
+      --danger: #fb7185;
+      --border: rgba(159, 176, 199, .18);
+    }
+
+    * { box-sizing: border-box; }
     body {
-      font-family: Arial, sans-serif;
-      background: #0f172a;
-      color: #e5e7eb;
-      padding: 30px;
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top right, #16365a 0, var(--bg) 45%);
+      color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    .card {
-      background: #1e293b;
-      padding: 20px;
-      border-radius: 10px;
-      width: 420px;
-    }
-    .title {
-      font-size: 22px;
-      margin-bottom: 10px;
-    }
-    .live {
-      color: #22c55e;
-      font-weight: bold;
-    }
-    .value {
-      font-size: 18px;
-      margin: 8px 0;
-    }
-    select {
-      width: 100%;
-      padding: 6px;
-      margin-bottom: 10px;
+    .shell { width: min(1040px, 100%); margin: 0 auto; padding: 32px 20px 48px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+    .eyebrow { color: var(--accent); font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(1.8rem, 4vw, 2.8rem); line-height: 1.1; margin-top: 5px; }
+    .status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
+    .status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--warning); }
+    .status.connected::before { background: var(--accent); }
+    .status.error::before { background: var(--danger); }
+    .layout { display: grid; grid-template-columns: 290px 1fr; gap: 20px; }
+    .panel { background: rgba(16, 31, 51, .9); border: 1px solid var(--border); border-radius: 18px; padding: 20px; box-shadow: 0 18px 50px rgba(0, 0, 0, .18); }
+    .panel-title { color: var(--muted); font-size: .82rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 12px; }
+    select, button { border: 1px solid var(--border); border-radius: 10px; color: var(--text); font: inherit; }
+    select { width: 100%; background: var(--panel-light); padding: 12px; }
+    button { cursor: pointer; background: var(--accent); color: #062016; font-weight: 700; padding: 10px 14px; }
+    button:hover { filter: brightness(1.08); }
+    button.secondary { background: transparent; color: var(--text); }
+    .match-list { display: grid; gap: 10px; margin-top: 18px; }
+    .match-hint, .empty, .error { color: var(--muted); font-size: .92rem; }
+    .error { color: var(--danger); margin-top: 12px; }
+    .score-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .live-badge { color: #052015; background: var(--accent); border-radius: 999px; font-size: .75rem; font-weight: 800; padding: 5px 10px; }
+    .teams { color: var(--muted); font-size: 1.05rem; margin-top: 8px; }
+    .score { display: flex; align-items: baseline; gap: 10px; margin: 28px 0 22px; }
+    .score strong { font-size: clamp(3.2rem, 9vw, 5.5rem); line-height: .9; }
+    .score span { color: var(--muted); font-size: 1.05rem; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .stat { background: var(--panel-light); border-radius: 12px; padding: 14px; }
+    .stat-label { color: var(--muted); font-size: .78rem; }
+    .stat-value { font-size: 1.3rem; font-weight: 700; margin-top: 4px; }
+    .commentary { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 18px; }
+    .commentary p { color: var(--text); margin-top: 6px; }
+    .empty-state { text-align: center; padding: 70px 20px; }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+    @media (max-width: 720px) {
+      .shell { padding: 22px 14px 36px; }
+      header { align-items: flex-start; flex-direction: column; }
+      .layout { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">Cricket Live Centre</div>
+        <h1>Follow every ball</h1>
+      </div>
+      <div id="connectionStatus" class="status">Connecting to live feed</div>
+    </header>
 
-  <div class="card">
-    <div class="title">🏏 Live Match <span class="live">● LIVE</span></div>
+    <div class="layout">
+      <aside class="panel">
+        <div class="panel-title">Live matches</div>
+        <select id="matchSelect" aria-label="Choose a live match">
+          <option>Loading matches...</option>
+        </select>
+        <p id="matchHint" class="match-hint"></p>
+        <div class="match-list">
+          <button id="reconnectButton" class="secondary" type="button">Reconnect live feed</button>
+        </div>
+        <p id="loadError" class="error" hidden></p>
+      </aside>
 
-    <select id="matchSelect">
-      <option>Loading matches...</option>
-    </select>
-
-    <div class="value">Match ID: <span id="matchId">-</span></div>
-    <div class="value">Overs: <span id="overs">0.0</span></div>
-    <div class="value">Runs: <span id="runs">0</span></div>
-    <div class="value">Wickets: <span id="wickets">0</span></div>
-    <div class="value">Last Ball: <span id="commentary">-</span></div>
-
-    <hr />
-    <div class="value">WebSocket: <span id="status">Disconnected</span></div>
-  </div>
+      <section id="scorePanel" class="panel" aria-live="polite">
+        <div class="empty-state">
+          <div class="icon">🏏</div>
+          <h2>Select a match to begin</h2>
+          <p class="match-hint">Live score, wickets, and commentary will appear here.</p>
+        </div>
+      </section>
+    </div>
+  </main>
 
   <script>
-    let ws = null;
+    const apiBase = window.location.origin.includes("localhost:") ? "http://localhost:8000" : window.location.origin;
+    const wsBase = apiBase.replace(/^http/, "ws");
+    const select = document.getElementById("matchSelect");
+    const scorePanel = document.getElementById("scorePanel");
+    const status = document.getElementById("connectionStatus");
+    const loadError = document.getElementById("loadError");
+    let socket;
+    let selectedMatch;
+
+    function setStatus(text, state = "") {
+      status.textContent = text;
+      status.className = `status ${state}`;
+    }
+
+    function renderMatch(match) {
+      selectedMatch = match;
+      scorePanel.innerHTML = `
+        <div class="score-header">
+          <div>
+            <div class="eyebrow">Live score</div>
+            <h2>${escapeHtml(match.team_a)} vs ${escapeHtml(match.team_b)}</h2>
+            <p class="teams">${escapeHtml(match.venue)}</p>
+          </div>
+          <span class="live-badge">LIVE</span>
+        </div>
+        <div class="score"><strong id="runs">0</strong><span>runs</span></div>
+        <div class="stats">
+          <div class="stat"><div class="stat-label">Overs</div><div id="overs" class="stat-value">0.0</div></div>
+          <div class="stat"><div class="stat-label">Wickets</div><div id="wickets" class="stat-value">0</div></div>
+          <div class="stat"><div class="stat-label">Match status</div><div id="matchState" class="stat-value">Live</div></div>
+        </div>
+        <div class="commentary">
+          <div class="panel-title">Latest commentary</div>
+          <p id="commentary">Waiting for the first ball...</p>
+        </div>`;
+    }
+
+    function connect(match) {
+      if (!match) return;
+      renderMatch(match);
+      if (socket) socket.close();
+      setStatus("Connecting to live feed");
+      socket = new WebSocket(`${wsBase}/ws/match/${encodeURIComponent(match.id)}`);
+      socket.onopen = () => setStatus("Live updates connected", "connected");
+      socket.onclose = () => setStatus("Live feed disconnected", "error");
+      socket.onerror = () => setStatus("Live feed unavailable", "error");
+      socket.onmessage = ({ data }) => {
+        const event = JSON.parse(data);
+        if (event.type === "BALL") {
+          document.getElementById("runs").textContent = event.runs;
+          document.getElementById("overs").textContent = event.over;
+          document.getElementById("wickets").textContent = event.wickets ?? (event.wicket ? 1 : 0);
+          document.getElementById("commentary").textContent = event.commentary;
+        }
+        if (event.type === "MATCH_END") {
+          document.getElementById("matchState").textContent = "Finished";
+          setStatus("Match finished", "connected");
+        }
+      };
+    }
 
     async function loadMatches() {
-      const res = await fetch("http://localhost:8000/matches/live");
-      const matches = await res.json();
-
-      const select = document.getElementById("matchSelect");
-      select.innerHTML = "";
-
-      matches.forEach(match => {
-        const option = document.createElement("option");
-        option.value = match.id;
-        option.text = `${match.team_a} vs ${match.team_b}`;
-        select.appendChild(option);
-      });
-
-      if (matches.length > 0) {
-        connectWebSocket(matches[0].id);
+      loadError.hidden = true;
+      try {
+        const response = await fetch(`${apiBase}/matches/live`);
+        if (!response.ok) throw new Error("The live matches endpoint returned an error.");
+        const matches = await response.json();
+        select.innerHTML = "";
+        if (!matches.length) {
+          select.innerHTML = "<option>No live matches</option>";
+          document.getElementById("matchHint").textContent = "Check back when a match starts.";
+          return;
+        }
+        matches.forEach(match => {
+          const option = new Option(`${match.team_a} vs ${match.team_b}`, match.id);
+          select.add(option);
+        });
+        document.getElementById("matchHint").textContent = `${matches.length} live match${matches.length === 1 ? "" : "es"} available`;
+        connect(matches[0]);
+        select.onchange = () => connect(matches.find(match => match.id === select.value));
+      } catch (error) {
+        loadError.textContent = error.message;
+        loadError.hidden = false;
+        select.innerHTML = "<option>Unable to load matches</option>";
+        setStatus("Unable to load live feed", "error");
       }
-
-      select.onchange = () => connectWebSocket(select.value);
     }
 
-    function connectWebSocket(matchId) {
-      if (ws) ws.close();
-
-      document.getElementById("matchId").innerText = matchId;
-      document.getElementById("status").innerText = "Connecting...";
-
-      ws = new WebSocket(`ws://localhost:8000/ws/match/${matchId}`);
-
-      ws.onopen = () => {
-        document.getElementById("status").innerText = "Connected";
-      };
-
-      ws.onclose = () => {
-        document.getElementById("status").innerText = "Disconnected";
-      };
-
-      ws.onerror = () => {
-        document.getElementById("status").innerText = "Error";
-      };
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-
-        if (data.type === "BALL") {
-          document.getElementById("overs").innerText = data.over;
-          document.getElementById("runs").innerText = data.runs;
-          document.getElementById("wickets").innerText = data.wicket ? "Yes" : "No";
-          document.getElementById("commentary").innerText = data.commentary;
-        }
-
-        if (data.type === "MATCH_END") {
-          document.getElementById("status").innerText = "Match Finished";
-        }
-      };
+    document.getElementById("reconnectButton").onclick = () => connect(selectedMatch);
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
     }
-
     loadMatches();
   </script>
-
 </body>
 </html>

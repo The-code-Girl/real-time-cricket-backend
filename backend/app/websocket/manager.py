@@ -10,7 +10,15 @@ class ConnectionManager:
         self.active_connections.setdefault(match_id, set()).add(websocket)
 
     def disconnect(self, match_id: str, websocket: WebSocket):
-        self.active_connections.get(match_id, set()).discard(websocket)
+        connections = self.active_connections.get(match_id)
+        if not connections:
+            return
+        connections.discard(websocket)
+        if not connections:
+            self.active_connections.pop(match_id, None)
+
+    def has_connections(self, match_id: str) -> bool:
+        return bool(self.active_connections.get(match_id))
 
     async def broadcast(self, match_id: str, message: str):
         connections = self.active_connections.get(match_id, set())

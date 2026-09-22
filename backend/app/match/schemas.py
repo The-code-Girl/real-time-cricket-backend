@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 
 class MatchCreate(BaseModel):
@@ -13,8 +13,10 @@ class MatchResponse(BaseModel):
     venue: str
     status: str
 
+    model_config = {"from_attributes": True}
+
 class BallUpdate(BaseModel):
     over: str
-    runs: int
+    runs: int = Field(ge=0)
     wicket: bool = False
-    commentary: str
+    commentary: str = Field(min_length=1, max_length=500)
