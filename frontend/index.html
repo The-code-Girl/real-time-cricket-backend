@@ -36,13 +36,24 @@
     .status.connected::before { background: var(--accent); }
     .status.error::before { background: var(--danger); }
     .layout { display: grid; grid-template-columns: 290px 1fr; gap: 20px; }
+    .stack { display: grid; gap: 20px; }
     .panel { background: rgba(16, 31, 51, .9); border: 1px solid var(--border); border-radius: 18px; padding: 20px; box-shadow: 0 18px 50px rgba(0, 0, 0, .18); }
     .panel-title { color: var(--muted); font-size: .82rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 12px; }
-    select, button { border: 1px solid var(--border); border-radius: 10px; color: var(--text); font: inherit; }
-    select { width: 100%; background: var(--panel-light); padding: 12px; }
+    input, select, button { border: 1px solid var(--border); border-radius: 10px; color: var(--text); font: inherit; }
+    input, select { width: 100%; background: var(--panel-light); padding: 12px; }
     button { cursor: pointer; background: var(--accent); color: #062016; font-weight: 700; padding: 10px 14px; }
     button:hover { filter: brightness(1.08); }
     button.secondary { background: transparent; color: var(--text); }
+    form { display: grid; gap: 10px; }
+    form + form { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+    .scorer-form { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+    .scorer-form label { color: var(--muted); font-size: .82rem; }
+    .checkbox { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .9rem; }
+    .checkbox input { width: auto; }
+    .history { display: grid; gap: 10px; margin-top: 14px; }
+    .history-item { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px; background: var(--panel-light); border-radius: 12px; }
+    .history-item strong { display: block; }
+    .history-item span { color: var(--muted); font-size: .9rem; }
     .match-list { display: grid; gap: 10px; margin-top: 18px; }
     .match-hint, .empty, .error { color: var(--muted); font-size: .92rem; }
     .error { color: var(--danger); margin-top: 12px; }
@@ -79,6 +90,35 @@
 
     <div class="layout">
       <aside class="panel">
+        <div class="panel-title">Admin access</div>
+        <form id="loginForm">
+          <input id="email" type="email" placeholder="Admin email" required />
+          <input id="password" type="password" placeholder="Password" required />
+          <button type="submit">Sign in</button>
+        </form>
+        <form id="createMatchForm" hidden>
+          <div class="panel-title">Add new match</div>
+          <input id="teamA" placeholder="Team A" required />
+          <input id="teamB" placeholder="Team B" required />
+          <input id="venue" placeholder="Venue" required />
+          <button type="submit">Create live match</button>
+        </form>
+        <form id="scorerForm" class="scorer-form" hidden>
+          <div class="panel-title">Ball-by-ball scoring</div>
+          <label for="delivery">Delivery type</label>
+          <select id="delivery">
+            <option value="legal">Legal delivery</option>
+            <option value="wide">Wide</option>
+            <option value="no_ball">No-ball</option>
+            <option value="bye">Bye</option>
+            <option value="leg_bye">Leg-bye</option>
+          </select>
+          <input id="ballRuns" type="number" min="0" max="6" value="0" placeholder="Runs" required />
+          <label class="checkbox"><input id="wicket" type="checkbox" /> Wicket</label>
+          <input id="commentaryInput" placeholder="Commentary" required />
+          <button type="submit">Publish ball</button>
+        </form>
+        <p id="adminMessage" class="match-hint"></p>
         <div class="panel-title">Live matches</div>
         <select id="matchSelect" aria-label="Choose a live match">
           <option>Loading matches...</option>
@@ -98,21 +138,38 @@
         </div>
       </section>
     </div>
+    <section class="panel" style="margin-top: 20px">
+      <div class="panel-title">Match history</div>
+      <div id="historyList" class="history"><p class="empty">Loading completed matches...</p></div>
+    </section>
   </main>
 
   <script>
-    const apiBase = window.location.origin.includes("localhost:") ? "http://localhost:8000" : window.location.origin;
+    const localFrontend = ["localhost", "127.0.0.1"].includes(window.location.hostname) && window.location.port !== "8000";
+    const apiBase = window.location.protocol === "file:" || localFrontend ? "http://127.0.0.1:8000" : window.location.origin;
     const wsBase = apiBase.replace(/^http/, "ws");
     const select = document.getElementById("matchSelect");
     const scorePanel = document.getElementById("scorePanel");
     const status = document.getElementById("connectionStatus");
     const loadError = document.getElementById("loadError");
+    const historyList = document.getElementById("historyList");
+    const adminMessage = document.getElementById("adminMessage");
     let socket;
     let selectedMatch;
+    let adminToken = "";
 
     function setStatus(text, state = "") {
       status.textContent = text;
       status.className = `status ${state}`;
+    }
+
+    function updateScore(state) {
+      const runs = document.getElementById("runs");
+      if (!runs) return;
+      runs.textContent = state.runs;
+      document.getElementById("overs").textContent = state.overs;
+      document.getElementById("wickets").textContent = state.wickets;
+      if (state.last_event) document.getElementById("commentary").textContent = state.last_event;
     }
 
     function renderMatch(match) {
@@ -124,7 +181,10 @@
             <h2>${escapeHtml(match.team_a)} vs ${escapeHtml(match.team_b)}</h2>
             <p class="teams">${escapeHtml(match.venue)}</p>
           </div>
-          <span class="live-badge">LIVE</span>
+          <div>
+            <span class="live-badge">LIVE</span>
+            <button id="completeMatchButton" class="secondary" type="button" hidden>Complete</button>
+          </div>
         </div>
         <div class="score"><strong id="runs">0</strong><span>runs</span></div>
         <div class="stats">
@@ -136,9 +196,24 @@
           <div class="panel-title">Latest commentary</div>
           <p id="commentary">Waiting for the first ball...</p>
         </div>`;
+      document.getElementById("completeMatchButton").onclick = completeSelectedMatch;
+      document.getElementById("completeMatchButton").hidden = !adminToken;
+      document.getElementById("scorerForm").hidden = !adminToken;
     }
 
-    function connect(match) {
+    async function completeSelectedMatch() {
+      if (!selectedMatch) return;
+      try {
+        await request(`/matches/${selectedMatch.id}/complete`, { method: "POST" });
+        if (socket) socket.close();
+        adminMessage.textContent = "Match completed and added to history.";
+        await Promise.all([loadMatches(), loadHistory()]);
+      } catch (error) {
+        adminMessage.textContent = error.message;
+      }
+    }
+
+    async function connect(match) {
       if (!match) return;
       renderMatch(match);
       if (socket) socket.close();
@@ -150,24 +225,35 @@
       socket.onmessage = ({ data }) => {
         const event = JSON.parse(data);
         if (event.type === "BALL") {
-          document.getElementById("runs").textContent = event.runs;
-          document.getElementById("overs").textContent = event.over;
-          document.getElementById("wickets").textContent = event.wickets ?? (event.wicket ? 1 : 0);
-          document.getElementById("commentary").textContent = event.commentary;
+          updateScore({ runs: event.runs, overs: event.over, wickets: event.wickets, last_event: event.commentary });
         }
         if (event.type === "MATCH_END") {
           document.getElementById("matchState").textContent = "Finished";
           setStatus("Match finished", "connected");
         }
       };
+      try {
+        updateScore(await request(`/matches/${match.id}/live`));
+      } catch (error) {
+        document.getElementById("commentary").textContent = error.message;
+      }
+    }
+
+    async function request(path, options = {}) {
+      const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+      if (adminToken) headers.Authorization = `Bearer ${adminToken}`;
+      const response = await fetch(`${apiBase}${path}`, { ...options, headers });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.detail || `Request failed (${response.status})`);
+      }
+      return response.status === 204 ? null : response.json();
     }
 
     async function loadMatches() {
       loadError.hidden = true;
       try {
-        const response = await fetch(`${apiBase}/matches/live`);
-        if (!response.ok) throw new Error("The live matches endpoint returned an error.");
-        const matches = await response.json();
+        const matches = await request("/matches/live");
         select.innerHTML = "";
         if (!matches.length) {
           select.innerHTML = "<option>No live matches</option>";
@@ -189,11 +275,79 @@
       }
     }
 
+    async function loadHistory() {
+      try {
+        const matches = await request("/matches/history");
+        historyList.innerHTML = matches.length ? matches.map(match => `
+          <div class="history-item">
+            <div><strong>${escapeHtml(match.team_a)} vs ${escapeHtml(match.team_b)}</strong><span>${escapeHtml(match.venue)}</span></div>
+            <span>Completed</span>
+          </div>`).join("") : '<p class="empty">No completed matches yet.</p>';
+      } catch (error) {
+        historyList.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
+      }
+    }
+
+    document.getElementById("loginForm").onsubmit = async event => {
+      event.preventDefault();
+      try {
+        const result = await request("/auth/login", { method: "POST", body: JSON.stringify({
+          email: document.getElementById("email").value,
+          password: document.getElementById("password").value
+        }) });
+        adminToken = result.access_token;
+        document.getElementById("createMatchForm").hidden = false;
+        document.getElementById("scorerForm").hidden = !selectedMatch;
+        if (selectedMatch) document.getElementById("completeMatchButton").hidden = false;
+        adminMessage.textContent = "Signed in. You can create and complete matches.";
+      } catch (error) {
+        adminMessage.textContent = error.message;
+      }
+    };
+
+    document.getElementById("createMatchForm").onsubmit = async event => {
+      event.preventDefault();
+      try {
+        await request("/matches/", { method: "POST", body: JSON.stringify({
+          team_a: document.getElementById("teamA").value,
+          team_b: document.getElementById("teamB").value,
+          venue: document.getElementById("venue").value
+        }) });
+        event.target.reset();
+        adminMessage.textContent = "Match created and is now live.";
+        await loadMatches();
+      } catch (error) {
+        adminMessage.textContent = error.message;
+      }
+    };
+
+    document.getElementById("scorerForm").onsubmit = async event => {
+      event.preventDefault();
+      if (!selectedMatch) {
+        adminMessage.textContent = "Select a live match before publishing a ball.";
+        return;
+      }
+      try {
+        await request(`/matches/${selectedMatch.id}/ball`, { method: "POST", body: JSON.stringify({
+          delivery: document.getElementById("delivery").value,
+          runs: Number(document.getElementById("ballRuns").value),
+          wicket: document.getElementById("wicket").checked,
+          commentary: document.getElementById("commentaryInput").value
+        }) });
+        document.getElementById("commentaryInput").value = "";
+        document.getElementById("wicket").checked = false;
+        adminMessage.textContent = "Ball published to all viewers.";
+      } catch (error) {
+        adminMessage.textContent = error.message;
+      }
+    };
+
     document.getElementById("reconnectButton").onclick = () => connect(selectedMatch);
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
     }
     loadMatches();
+    loadHistory();
   </script>
 </body>
 </html>

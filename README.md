@@ -96,3 +96,4 @@ This project is built to showcase:
 - API & WebSocket design
 - Scalability & capacity planning
 - Production-quality backend engineering practices
+        
