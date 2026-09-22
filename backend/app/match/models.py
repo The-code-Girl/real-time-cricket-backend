@@ -3,7 +3,7 @@ from sqlalchemy import Column, String, Integer, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
-from app.db.base import Base
+from app.db.registry import Base
 
 class Match(Base):
     __tablename__ = "matches"
