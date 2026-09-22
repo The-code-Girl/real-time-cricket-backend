@@ -11,7 +11,9 @@ load_dotenv()
 # __file__ is migrations/env.py, so go up 1 folder to 'backend'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.db.base import Base  # Base includes all your models
+from app.db.base import Base
+from app.models.user import User  # noqa: F401
+from app.match.models import Match  # noqa: F401
 
 target_metadata = Base.metadata
 

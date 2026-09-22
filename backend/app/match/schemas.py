@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from uuid import UUID
 
@@ -16,7 +18,14 @@ class MatchResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 class BallUpdate(BaseModel):
-    over: str
+    delivery: Literal["legal", "wide", "no_ball", "bye", "leg_bye"] = "legal"
+    over: str | None = None
     runs: int = Field(ge=0)
     wicket: bool = False
     commentary: str = Field(min_length=1, max_length=500)
+
+class LiveMatchState(BaseModel):
+    runs: int
+    wickets: int
+    overs: str
+    last_event: str | None = None
